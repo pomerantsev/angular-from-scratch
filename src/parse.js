@@ -17,6 +17,94 @@ var OPERATORS = {
   'false': _.constant(false)
 };
 
+var getterFn = _.memoize(function (ident) {
+  var pathKeys = ident.split('.');
+  if (pathKeys.length === 1) {
+    return simpleGetterFn1(pathKeys[0]);
+  } else if (pathKeys.length === 2) {
+    return simpleGetterFn2(pathKeys[0], pathKeys[1]);
+  } else {
+    return generatedGetterFn(pathKeys);
+  }
+});
+
+var simpleGetterFn1 = function (key) {
+  ensureSafeMemberName(key);
+  return function (scope, locals) {
+    if (!scope) {
+      return undefined;
+    }
+    return (locals && locals.hasOwnProperty(key)) ? locals[key] : scope[key];
+  };
+};
+
+var simpleGetterFn2 = function (key1, key2) {
+  ensureSafeMemberName(key1);
+  ensureSafeMemberName(key2);
+  return function (scope, locals) {
+    if (!scope) {
+      return undefined;
+    }
+    scope = (locals && locals.hasOwnProperty(key1)) ?
+              locals[key1] :
+              scope[key1];
+    return scope ? scope[key2] : undefined;
+  };
+};
+
+var generatedGetterFn = function (keys) {
+  var code = '';
+  _.forEach(keys, function (key, idx) {
+    ensureSafeMemberName(key);
+    code += 'if (!scope) { return undefined; }\n';
+    if (idx === 0) {
+      code += 'scope = (locals && locals.hasOwnProperty("' + key + '")) ? ' +
+                'locals["' + key + '"] : ' +
+                'scope["' + key + '"];\n';
+    } else {
+      code += 'scope = scope["' + key + '"];\n';
+    }
+  });
+  code += 'return scope;\n';
+  /* jshint -W054 */
+  return new Function('scope', 'locals', code);
+  /* jshint +W054 */
+};
+
+var setter = function (object, path, value) {
+  var keys = path.split('.');
+  while (keys.length > 1) {
+    var key = keys.shift();
+    ensureSafeMemberName(key);
+    if (!object.hasOwnProperty(key)) {
+      object[key] = {};
+    }
+    object = object[key];
+  }
+  object[keys.shift()] = value;
+  return value;
+};
+
+var ensureSafeMemberName = function (name) {
+  if (name === 'constructor') {
+    throw 'Referencing "constructor" field in expressions is disallowed!';
+  }
+};
+
+var ensureSafeObject = function (obj) {
+  if (obj) {
+    if (obj.document && obj.location && obj.alert && obj.setInterval) {
+      throw 'Referencing window in Angular expressions is disallowed!';
+    } else if (obj.children &&
+                (obj.nodeName || (obj.prop && obj. attr && obj.find))) {
+      throw 'Referencing DOM nodes in Angular expressions is disallowed!';
+    } else if (obj.constructor === obj) {
+      throw 'Referencing Function in Angular expressions is disallowed!';
+    }
+  }
+  return obj;
+};
+
 function parse (expr) {
   switch (typeof expr) {
     case 'string':
@@ -46,7 +134,7 @@ Lexer.prototype.lex = function (text) {
       this.readNumber();
     } else if (this.is('\'"')) {
       this.readString(this.ch);
-    } else if (this.is('[],{}:')) {
+    } else if (this.is('[],{}:.()=')) {
       this.tokens.push({
         text: this.ch,
         json: true
@@ -149,14 +237,31 @@ Lexer.prototype.readString = function (quote) {
 
 Lexer.prototype.readIdent = function () {
   var text = '';
+  var start = this.index;
+  var lastDotAt;
   while (this.index < this.text.length) {
     var ch = this.text.charAt(this.index);
-    if (this.isIdent(ch) || this.isNumber(ch)) {
+    if (ch === '.' || this.isIdent(ch) || this.isNumber(ch)) {
+      if (ch === '.') {
+        lastDotAt = this.index;
+      }
       text += ch;
     } else {
       break;
     }
     this.index++;
+  }
+
+  var methodName;
+  if (lastDotAt) {
+    var peekIndex = this.index;
+    while (this.isWhitespace(this.text.charAt(peekIndex))) {
+      peekIndex++;
+    }
+    if (this.text.charAt(peekIndex) === '(') {
+      methodName = text.substring(lastDotAt - start + 1);
+      text = text.substring(0, lastDotAt - start);
+    }
   }
 
   var token = {
@@ -165,9 +270,26 @@ Lexer.prototype.readIdent = function () {
   if (OPERATORS.hasOwnProperty(text)) {
     token.fn = OPERATORS[text];
     token.json = true;
+  } else {
+    token.fn = getterFn(text);
+    token.fn.assign = function (self, value) {
+      return setter(self, text, value);
+    };
   }
 
   this.tokens.push(token);
+
+  if (methodName) {
+    this.tokens.push({
+      text: '.',
+      json: false
+    });
+    this.tokens.push({
+      text: methodName,
+      fn: getterFn(methodName),
+      json: false
+    });
+  }
 };
 
 Lexer.prototype.peek = function () {
@@ -196,7 +318,7 @@ function Parser (lexer) {
 
 Parser.prototype.parse = function (text) {
   this.tokens = this.lexer.lex(text);
-  return this.primary();
+  return this.assignment();
 };
 
 Parser.prototype.primary = function () {
@@ -213,11 +335,89 @@ Parser.prototype.primary = function () {
       primary.literal = true;
     }
   }
+
+  var next;
+  var context;
+  while ((next = this.expect('[', '.', '('))) {
+    if (next.text === '[') {
+      context = primary;
+      primary = this.objectIndex(primary);
+    } else if (next.text === '.') {
+      context = primary;
+      primary = this.fieldAccess(primary);
+    } else if (next.text === '(') {
+      primary = this.functionCall(primary, context);
+      context = undefined;
+    }
+  }
+
   return primary;
 };
 
-Parser.prototype.expect = function (e) {
-  var token = this.peek(e);
+Parser.prototype.assignment = function () {
+  var left = this.primary();
+  if (this.expect('=')) {
+    if (!left.assign) {
+      throw 'Implies assignment but cannot be assigned to';
+    }
+    var right = this.primary();
+    return function (scope, locals) {
+      return left.assign(scope, right(scope, locals), locals);
+    };
+  }
+  return left;
+};
+
+Parser.prototype.objectIndex = function (objFn) {
+  var indexFn = this.primary();
+  this.consume(']');
+  var objectIndexFn = function (scope, locals) {
+    var obj = objFn(scope, locals);
+    var index = indexFn(scope, locals);
+    return ensureSafeObject(obj[index]);
+  };
+  objectIndexFn.assign = function (self, value, locals) {
+    var obj = ensureSafeObject(objFn(self, locals));
+    var index = indexFn(self, locals);
+    return (obj[index] = value);
+  };
+  return objectIndexFn;
+};
+
+Parser.prototype.fieldAccess = function (objFn) {
+  var token = this.expect();
+  var getter = token.fn;
+  var fieldAccessFn = function (scope, locals) {
+    var obj = objFn(scope, locals);
+    return getter(obj);
+  };
+  fieldAccessFn.assign = function (self, value, locals) {
+    var obj = objFn(self, locals);
+    return setter(obj, token.text, value);
+  };
+  return fieldAccessFn;
+};
+
+Parser.prototype.functionCall = function (fnFn, contextFn) {
+  var argFns = [];
+  if (!this.peek(')')) {
+    do {
+      argFns.push(this.primary());
+    } while(this.expect(','));
+  }
+  this.consume(')');
+  return function (scope, locals) {
+    var context = ensureSafeObject(contextFn ? contextFn(scope, locals) : scope);
+    var fn = ensureSafeObject(fnFn(scope, locals));
+    var args = _.map(argFns, function (argFn) {
+      return argFn(scope, locals);
+    });
+    return ensureSafeObject(fn.apply(context, args));
+  };
+};
+
+Parser.prototype.expect = function (e1, e2, e3, e4) {
+  var token = this.peek(e1, e2, e3, e4);
   if (token) {
     return this.tokens.shift();
   }
@@ -229,10 +429,11 @@ Parser.prototype.consume = function (e) {
   }
 };
 
-Parser.prototype.peek = function (e) {
+Parser.prototype.peek = function (e1, e2, e3, e4) {
   if (this.tokens.length > 0) {
     var text = this.tokens[0].text;
-    if (text === e || !e) {
+    if (text === e1 || text === e2 || text === e3 || text === e4 ||
+         (!e1 && !e2 && !e3 && !e4)) {
       return this.tokens[0];
     }
   }
@@ -245,18 +446,18 @@ Parser.prototype.arrayDeclaration = function () {
       if (this.peek(']')) {
         break;
       }
-      elementFns.push(this.primary());
+      elementFns.push(this.assignment());
     } while (this.expect(','));
   }
   this.consume(']');
-  var arrayFn = function () {
+  var arrayFn = function (scope, locals) {
     var elements = _.map(elementFns, function (elementFn) {
-      return elementFn();
+      return elementFn(scope, locals);
     });
     return elements;
   };
   arrayFn.literal = true;
-  arrayFn.constant = true;
+  arrayFn.constant = _.every(elementFns, 'constant');
   return arrayFn;
 };
 
@@ -266,7 +467,7 @@ Parser.prototype.object = function () {
     do {
       var keyToken = this.expect();
       this.consume(':');
-      var valueExpression = this.primary();
+      var valueExpression = this.assignment();
       keyValues.push({
         key: keyToken.string || keyToken.text,
         value: valueExpression
@@ -274,14 +475,14 @@ Parser.prototype.object = function () {
     } while (this.expect(','));
   }
   this.consume('}');
-  var objectFn = function () {
+  var objectFn = function (scope, locals) {
     var object = {};
     _.forEach(keyValues, function (kv) {
-      object[kv.key] = kv.value();
+      object[kv.key] = kv.value(scope, locals);
     });
     return object;
   };
   objectFn.literal = true;
-  objectFn.constant = true;
+  objectFn.constant = _(keyValues).pluck('value').every('constant');
   return objectFn;
 };

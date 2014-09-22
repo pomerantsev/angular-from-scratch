@@ -136,10 +136,9 @@ describe('parse', function () {
     expect(fn()).toEqual([1, 2, 3]);
   });
 
-  it('marks array literals as literal and constant', function () {
+  it('marks array literals as literal', function () {
     var fn = parse('[1, 2, 3]');
     expect(fn.literal).toBe(true);
-    expect(fn.constant).toBe(true);
   });
 
   it('will parse an empty object', function () {
@@ -164,5 +163,331 @@ describe('parse', function () {
 
   it('still returns a function when given no argument', function () {
     expect(parse()).toEqual(jasmine.any(Function));
+  });
+
+  it('looks up an attribute from the scope', function () {
+    var fn = parse('aKey');
+    expect(fn({aKey: 42})).toBe(42);
+    expect(fn({})).toBeUndefined();
+    expect(fn()).toBeUndefined();
+  });
+
+  it('looks up a 2-part identifier path from the scope', function () {
+    var fn = parse('aKey.anotherKey');
+    expect(fn({aKey: {anotherKey: 42}})).toBe(42);
+    expect(fn({aKey: {}})).toBeUndefined();
+    expect(fn({})).toBeUndefined();
+  });
+
+  it('looks up a 4-part identifier path from the scope', function () {
+    var fn = parse('aKey.secondKey.thirdKey.fourthKey');
+    expect(fn({aKey: {secondKey: {thirdKey: {fourthKey: 42}}}})).toBe(42);
+    expect(fn({aKey: {secondKey: {thirdKey: {}}}})).toBeUndefined();
+    expect(fn({aKey: {}})).toBeUndefined();
+    expect(fn()).toBeUndefined();
+  });
+
+  it('uses locals instead of scope when there is a matching key', function () {
+    var fn = parse('aKey');
+    expect(fn({aKey: 42}, {aKey: 43})).toBe(43);
+  });
+
+  it('does not use locals instead of scope when no matching key', function () {
+    var fn = parse('aKey');
+    expect(fn({aKey: 42}, {otherKey: 43})).toBe(42);
+  });
+
+  it('uses locals when a 2-part key matches in locals', function () {
+    var fn = parse('aKey.anotherKey');
+    expect(fn(
+      {aKey: {anotherKey: 42}},
+      {aKey: {anotherKey: 43}}
+    )).toBe(43);
+  });
+
+  it('does not use locals when a 2-part key does not match', function () {
+    var fn = parse('aKey.anotherKey');
+    expect(fn(
+      {aKey: {anotherKey: 42}},
+      {otherKey: {anotherKey: 43}}
+    )).toBe(42);
+  });
+
+  it('uses locals instead of scope when the first part matches', function () {
+    var fn = parse('aKey.anotherKey');
+    expect(fn({aKey: {anotherKey: 42}}, {aKey: {}})).toBeUndefined();
+  });
+
+  it('uses locals when there is a matching local 4-part key', function () {
+    var fn = parse('aKey.key2.key3.key4');
+    expect(fn(
+      {aKey: {key2: {key3: {key4: 42}}}},
+      {aKey: {key2: {key3: {key4: 43}}}}
+    )).toBe(43);
+  });
+
+  it('uses locals when there is the first part in the local key', function () {
+    var fn = parse('aKey.key2.key3.key4');
+    expect(fn(
+      {aKey: {key2: {key3: {key4: 42}}}},
+      {aKey: {}}
+    )).toBeUndefined();
+  });
+
+  it('does not use locals when there is no matching 4-part key', function () {
+    var fn = parse('aKey.key2.key3.key4');
+    expect(fn(
+      {aKey: {key2: {key3: {key4: 42}}}},
+      {otherKey: {anotherKey: 43}}
+    )).toBe(42);
+  });
+
+  it('parses a simple string property access', function () {
+    var fn = parse('aKey["anotherKey"]');
+    expect(fn({aKey: {anotherKey: 42}})).toBe(42);
+  });
+
+  it('parses a numeric array access', function () {
+    var fn = parse('anArray[1]');
+    expect(fn({anArray: [1, 2, 3]})).toBe(2);
+  });
+
+  it('parses a property access with another key as property', function () {
+    var fn = parse('lock[key]');
+    expect(fn({key: 'theKey', lock: {theKey: 42}})).toBe(42);
+  });
+
+  it('parses property access with another access as property', function () {
+    var fn = parse('lock[keys["aKey"]]');
+    expect(fn({keys: {aKey: 'theKey'}, lock: {theKey: 42}})).toBe(42);
+  });
+
+  it('parses several field accesses back to back', function () {
+    var fn = parse('aKey["anotherKey"]["aThirdKey"]');
+    expect(fn({aKey: {anotherKey: {aThirdKey: 42}}})).toBe(42);
+  });
+
+  it('parses a field access after a property access', function () {
+    var fn = parse('aKey["anotherKey"].aThirdKey');
+    expect(fn({aKey: {anotherKey: {aThirdKey: 42}}})).toBe(42);
+  });
+
+  it('parses a chain of property and field accesses', function () {
+    var fn = parse('aKey["anotherKey"].aThirdKey["aFourthKey"]');
+    expect(fn({aKey: {anotherKey: {aThirdKey: {aFourthKey: 42}}}})).toBe(42);
+  });
+
+  it('parses a function call', function () {
+    var fn = parse('aFunction()');
+    expect(fn({aFunction: function () { return 42; }})).toBe(42);
+  });
+
+  it('parses a function call with a single number argument', function () {
+    var fn = parse('aFunction(42)');
+    expect(fn({aFunction: function (n) { return n; }})).toBe(42);
+  });
+
+  it('parses a function call with a single identifier argument', function () {
+    var fn = parse('aFunction(n)');
+    expect(fn({n: 42, aFunction: function (arg) { return arg; }})).toBe(42);
+  });
+
+  it('parses a function call with a single function call argument', function () {
+    var fn = parse('aFunction(argFn())');
+    expect(fn({
+      argFn: _.constant(42),
+      aFunction: function (arg) { return arg; }
+    })).toBe(42);
+  });
+
+  it('parses a function call with multiple arguments', function () {
+    var fn = parse('aFunction(37, n, argFn())');
+    expect(fn({
+      n: 3,
+      argFn: _.constant(2),
+      aFunction: function (a1, a2, a3) { return a1 + a2 + a3; }
+    })).toBe(42);
+  });
+
+  it('does not allow calling the function constructor', function () {
+    expect(function () {
+      var fn = parse('aFunction.constructor("return window;")()');
+      fn({aFunction: function () {}});
+    }).toThrow();
+  });
+
+  it('calls functions accessed as properties with the correct this', function () {
+    var scope = {
+      anObject: {
+        aMember: 42,
+        aFunction: function () {
+          return this.aMember;
+        }
+      }
+    };
+    var fn = parse('anObject["aFunction"]()');
+    expect(fn(scope)).toBe(42);
+  });
+
+  it('calls functions accessed as fields with the correct this', function () {
+    var scope = {
+      anObject: {
+        aMember: 42,
+        aFunction: function () {
+          return this.aMember;
+        }
+      }
+    };
+    var fn = parse('anObject.aFunction()');
+    expect(fn(scope)).toBe(42);
+  });
+
+  it('calls methods with whitespace before function call', function () {
+    var scope = {
+      anObject: {
+        aMember: 42,
+        aFunction: function () {
+          return this.aMember;
+        }
+      }
+    };
+    var fn = parse('anObject.aFunction   ()');
+    expect(fn(scope)).toBe(42);
+  });
+
+  it('clears the this context on function calls', function () {
+    var scope = {
+      anObject: {
+        aMember: 42,
+        aFunction: function () {
+          return function () {
+            return this.aMember;
+          };
+        }
+      }
+    };
+    var fn = parse('anObject.aFunction()()');
+    expect(fn(scope)).toBeUndefined();
+  });
+
+  it('does not allow accessing window as property', function () {
+    var fn = parse('anObject["wnd"]');
+    expect(function () { fn({anObject: {wnd: window}}); }).toThrow();
+  });
+
+  it('does not allow calling functions of window', function () {
+    var fn = parse('wnd.scroll(500, 0)');
+    expect(function () { fn({wnd: window}); }).toThrow();
+  });
+
+  it('does not allow functions to return window', function () {
+    var fn = parse('getWnd()');
+    expect(function () { fn({getWnd: _.constant(window)}); }).toThrow();
+  });
+
+  it('does not allow calling functions on DOM elements', function () {
+    var fn = parse('el.setAttribute("evil", "true")');
+    expect(function () { fn({el: document.documentElement}); }).toThrow();
+  });
+
+  it('does not allow calling the aliased function constructor', function () {
+    var fn = parse('fnConstructor("return window;")');
+    expect(function () {
+      fn({fnConstructor: (function () {}).constructor});
+    }).toThrow();
+  });
+
+  it('parses a simple attribute assignment', function () {
+    var fn = parse('anAttribute = 42');
+    var scope = {};
+    fn(scope);
+    expect(scope.anAttribute).toBe(42);
+  });
+
+  it('can assign any primary expression', function () {
+    var fn = parse('anAttribute = aFunction()');
+    var scope = {aFunction: _.constant(42)};
+    fn(scope);
+    expect(scope.anAttribute).toBe(42);
+  });
+
+  it('parses a nested attribute assignment', function () {
+    var fn = parse('anObject.anAttribute = 42');
+    var scope = {anObject: {}};
+    fn(scope);
+    expect(scope.anObject.anAttribute).toBe(42);
+  });
+
+  it('creates the objects in the setter path that do not exist', function () {
+    var fn = parse('some.nested.path = 42');
+    var scope = {};
+    fn(scope);
+    expect(scope.some.nested.path).toBe(42);
+  });
+
+  it('parses an assignment through attribute access', function () {
+    var fn = parse('anObject["anAttribute"] = 42');
+    var scope = {anObject: {}};
+    fn(scope);
+    expect(scope.anObject.anAttribute).toBe(42);
+  });
+
+  it('parses assignment through field access after something else', function () {
+    var fn = parse('anObject["otherObject"].nested = 42');
+    var scope = {anObject: {otherObject: {}}};
+    fn(scope);
+    expect(scope.anObject.otherObject.nested).toBe(42);
+  });
+
+  it('parses an array with non-literals', function () {
+    var fn = parse('[a, b, c()]');
+    expect(fn({a: 1, b: 2, c: _.constant(3)})).toEqual([1, 2, 3]);
+  });
+
+  it('parses an object with non-literals', function () {
+    var fn = parse('{a: a, b: obj.c()}');
+    expect(fn({
+      a: 1,
+      obj: {
+        b: _.constant(2),
+        c: function () {
+          return this.b();
+        }
+      }
+    })).toEqual({a: 1, b: 2});
+  });
+
+  it('makes arrays constant when they only contain constants', function () {
+    var fn = parse('[1, 2, [3, 4]]');
+    expect(fn.constant).toBe(true);
+  });
+
+  it('makes arrays non-constant when they contain non-constants', function () {
+    expect(parse('[1, 2, a]').constant).toBe(false);
+    expect(parse('[1, 2, [[[[[a]]]]]]').constant).toBe(false);
+  });
+
+  it('makes objects constant when they only contain constants', function () {
+    var fn = parse('{a: 1, b: {c: 3}}');
+    expect(fn.constant).toBe(true);
+  });
+
+  it('makes objects non-constant when they contain non-constants', function () {
+    expect(parse('{a: 1, b: c}').constant).toBe(false);
+    expect(parse('{a: 1, b: {c: d}}').constant).toBe(false);
+  });
+
+  it('allows an array element to be an assignment', function () {
+    var fn = parse('[a = 1]');
+    var scope = {};
+    expect(fn(scope)).toEqual([1]);
+    expect(scope.a).toBe(1);
+  });
+
+  it('allows an object value to be an assignment', function () {
+    var fn = parse('{a: b = 1}');
+    var scope = {};
+    expect(fn(scope)).toEqual({a: 1});
+    expect(scope.b).toBe(1);
   });
 });
