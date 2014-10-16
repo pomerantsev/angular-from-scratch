@@ -40,24 +40,17 @@ Scope.prototype.$watch = function (watchFn, listenerFn, valueEq) {
   var self = this;
 
   watchFn = parse(watchFn);
-  listenerFn = parse(listenerFn);
+
+  if (watchFn.$$watchDelegate) {
+    return watchFn.$$watchDelegate(self, listenerFn, valueEq, watchFn);
+  }
 
   var watcher = {
     watchFn: watchFn,
-    listenerFn: listenerFn,
+    listenerFn: listenerFn || _.noop,
     valueEq: !!valueEq,
     last: initWatchVal
   };
-
-  if (watchFn.constant) {
-    watcher.listenerFn = function (newValue, oldValue, scope) {
-      listenerFn(newValue, oldValue, scope);
-      var index = self.$$watchers.indexOf(watcher);
-      if (index >= 0) {
-        self.$$watchers.splice(index, 1);
-      }
-    };
-  }
 
   this.$$watchers.unshift(watcher);
   this.$$root.$$lastDirtyWatch = null;
@@ -80,7 +73,6 @@ Scope.prototype.$watchCollection = function (watchFn, listenerFn) {
   var changeCount = 0;
 
   watchFn = parse(watchFn);
-  listenerFn = parse(listenerFn);
 
   var firstRun = true;
 

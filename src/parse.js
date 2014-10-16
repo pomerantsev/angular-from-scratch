@@ -11,10 +11,16 @@ var ESCAPES = {
   '"': '"'
 };
 
-var OPERATORS = {
+var CONSTANTS = {
   'null': _.constant(null),
   'true': _.constant(true),
-  'false': _.constant(false),
+  'false': _.constant(false)
+};
+_.forEach(CONSTANTS, function (fn, constantName) {
+  fn.constant = fn.literal = fn.sharedGetter = true;
+});
+
+var OPERATORS = {
   '+': function (self, locals, a, b) {
     a = a(self, locals);
     b = b(self, locals);
@@ -79,13 +85,21 @@ var OPERATORS = {
 
 var getterFn = _.memoize(function (ident) {
   var pathKeys = ident.split('.');
+  var fn;
   if (pathKeys.length === 1) {
-    return simpleGetterFn1(pathKeys[0]);
+    fn = simpleGetterFn1(pathKeys[0]);
   } else if (pathKeys.length === 2) {
-    return simpleGetterFn2(pathKeys[0], pathKeys[1]);
+    fn = simpleGetterFn2(pathKeys[0], pathKeys[1]);
   } else {
-    return generatedGetterFn(pathKeys);
+    fn = generatedGetterFn(pathKeys);
   }
+
+  fn.sharedGetter = true;
+  fn.assign = function (self, value) {
+    return setter(self, ident, value);
+  };
+
+  return fn;
 });
 
 var simpleGetterFn1 = function (key) {
@@ -165,12 +179,150 @@ var ensureSafeObject = function (obj) {
   return obj;
 };
 
+function constantWatchDelegate (scope, listenerFn, valueEq, watchFn) {
+  var unwatch = scope.$watch(
+    function () {
+      return watchFn(scope);
+    },
+    function (newValue, oldValue, scope) {
+      if (_.isFunction (listenerFn)) {
+        listenerFn.apply(this, arguments);
+      }
+      unwatch();
+    },
+    valueEq
+  );
+  return unwatch;
+}
+
+function oneTimeWatchDelegate (scope, listenerFn, valueEq, watchFn) {
+  var lastValue;
+  var unwatch = scope.$watch(
+    function () {
+      return watchFn(scope);
+    },
+    function (newValue, oldValue, scope) {
+      lastValue = newValue;
+      if (_.isFunction (listenerFn)) {
+        listenerFn.apply(this, arguments);
+      }
+      if (!_.isUndefined(newValue)) {
+        scope.$$postDigest(function () {
+          if (!_.isUndefined(lastValue)) {
+            unwatch();
+          }
+        });
+      }
+    },
+    valueEq
+  );
+  return unwatch;
+}
+
+function oneTimeLiteralWatchDelegate (scope, listenerFn, valueEq, watchFn) {
+  function isAllDefined (val) {
+    return !_.any(val, _.isUndefined);
+  }
+  var unwatch = scope.$watch(
+    function () {
+      return watchFn(scope);
+    },
+    function (newValue, oldValue, scope) {
+      if (_.isFunction(listenerFn)) {
+        listenerFn.apply(this, arguments);
+      }
+      if (isAllDefined(newValue)) {
+        scope.$$postDigest(function () {
+          if (isAllDefined(newValue)) {
+            unwatch();
+          }
+        });
+      }
+    },
+    valueEq
+  );
+  return unwatch;
+}
+
+function expressionInputDirtyCheck (newValue, oldValue) {
+  return newValue === oldValue ||
+    (typeof newValue === 'number' && typeof oldValue === 'number' &&
+     isNaN(newValue) && isNaN(oldValue));
+}
+
+function collectExpressionInputs (inputs, results) {
+  _.forEach(inputs, function (input) {
+    if (!input.constant) {
+      if (input.inputs) {
+        collectExpressionInputs(input.inputs, results);
+      } else if (results.indexOf(input) === -1) {
+        results.push(input);
+      }
+    }
+  });
+  return results;
+}
+
+function inputsWatchDelegate (scope, listenerFn, valueEq, watchFn) {
+  if (!watchFn.$$inputs) {
+    watchFn.$$inputs = collectExpressionInputs(watchFn.inputs, []);
+  }
+  var inputExpressions = watchFn.$$inputs;
+
+  var oldValues = _.times(inputExpressions.length, _.constant(function () {}));
+  var lastResult;
+
+  return scope.$watch(function () {
+    var changed = false;
+    _.forEach(inputExpressions, function (inputExpr, i) {
+      var newValue = inputExpr(scope);
+      if (changed || !expressionInputDirtyCheck(newValue, oldValues[i])) {
+        changed = true;
+        oldValues[i] = newValue;
+      }
+    });
+    if (changed) {
+      lastResult = watchFn(scope);
+    }
+    return lastResult;
+  }, listenerFn, valueEq);
+}
+
+function wrapSharedExpression (exprFn) {
+  var wrapped = exprFn;
+  if (wrapped.sharedGetter) {
+    wrapped = function (self, locals) {
+      return exprFn(self, locals);
+    };
+    wrapped.constant = exprFn.constant;
+    wrapped.literal = exprFn.literal;
+    wrapped.assign = exprFn.assign;
+  }
+  return wrapped;
+}
+
 function parse (expr) {
   switch (typeof expr) {
     case 'string':
       var lexer = new Lexer();
       var parser = new Parser(lexer);
-      return parser.parse(expr);
+      var oneTime = false;
+      if (expr.charAt(0) === ':' && expr.charAt(1) === ':') {
+        oneTime = true;
+        expr = expr.substring(2);
+      }
+      var parseFn = parser.parse(expr);
+
+      if (parseFn.constant) {
+        parseFn.$$watchDelegate = constantWatchDelegate;
+      } else if (oneTime) {
+        parseFn = wrapSharedExpression(parseFn);
+        parseFn.$$watchDelegate = parseFn.literal ? oneTimeLiteralWatchDelegate :
+                                                    oneTimeWatchDelegate;
+      } else if (parseFn.inputs) {
+        parseFn.$$watchDelegate = inputsWatchDelegate;
+      }
+      return parseFn;
     case 'function':
       return expr;
     default:
@@ -196,8 +348,7 @@ Lexer.prototype.lex = function (text) {
       this.readString(this.ch);
     } else if (this.is('[],{}:.()?;')) {
       this.tokens.push({
-        text: this.ch,
-        json: true
+        text: this.ch
       });
       this.index++;
     } else if (this.isIdent(this.ch)) {
@@ -272,7 +423,7 @@ Lexer.prototype.readNumber = function () {
   this.tokens.push({
     text: number,
     fn: _.constant(number),
-    json: true
+    constant: true
   });
 };
 
@@ -306,7 +457,7 @@ Lexer.prototype.readString = function (quote) {
       this.tokens.push({
         text: rawString,
         string: string,
-        json: true,
+        constant: true,
         fn: _.constant(string)
       });
       return;
@@ -350,29 +501,19 @@ Lexer.prototype.readIdent = function () {
   }
 
   var token = {
-    text: text
+    text: text,
+    fn: CONSTANTS[text] || getterFn(text)
   };
-  if (OPERATORS.hasOwnProperty(text)) {
-    token.fn = OPERATORS[text];
-    token.json = true;
-  } else {
-    token.fn = getterFn(text);
-    token.fn.assign = function (self, value) {
-      return setter(self, text, value);
-    };
-  }
 
   this.tokens.push(token);
 
   if (methodName) {
     this.tokens.push({
-      text: '.',
-      json: false
+      text: '.'
     });
     this.tokens.push({
       text: methodName,
-      fn: getterFn(methodName),
-      json: false
+      fn: getterFn(methodName)
     });
   }
 };
@@ -402,7 +543,10 @@ function Parser (lexer) {
   this.lexer = lexer;
 }
 
-Parser.ZERO = _.extend(_.constant(0), {constant: true});
+Parser.ZERO = _.extend(_.constant(0), {
+  constant: true,
+  sharedGetter: true
+});
 
 Parser.prototype.parse = function (text) {
   this.tokens = this.lexer.lex(text);
@@ -421,7 +565,7 @@ Parser.prototype.primary = function () {
   } else {
     var token = this.expect();
     primary = token.fn;
-    if (token.json) {
+    if (token.constant) {
       primary.constant = true;
       primary.literal = true;
     }
@@ -456,6 +600,7 @@ Parser.prototype.unary = function () {
     var unaryFn = function (self, locals) {
       return operator.fn(self, locals, operand);
     };
+    unaryFn.inputs = [operand];
     unaryFn.constant = operand.constant;
     return unaryFn;
   } else if ((operator = this.expect('-'))) {
@@ -505,7 +650,7 @@ Parser.prototype.logicalAND = function () {
   var left = this.equality();
   var operator;
   while ((operator = this.expect('&&'))) {
-    left = this.binaryFn(left, operator.fn, this.equality());
+    left = this.binaryFn(left, operator.fn, this.equality(), true);
   }
   return left;
 };
@@ -514,7 +659,7 @@ Parser.prototype.logicalOR = function () {
   var left = this.logicalAND();
   var operator;
   while ((operator = this.expect('||'))) {
-    left = this.binaryFn(left, operator.fn, this.logicalAND());
+    left = this.binaryFn(left, operator.fn, this.logicalAND(), true);
   }
   return left;
 };
@@ -542,9 +687,11 @@ Parser.prototype.assignment = function () {
       throw 'Implies assignment but cannot be assigned to';
     }
     var right = this.ternary();
-    return function (scope, locals) {
+    var assignmentFn = function (scope, locals) {
       return left.assign(scope, right(scope, locals), locals);
     };
+    assignmentFn.inputs = [left, right];
+    return assignmentFn;
   }
   return left;
 };
@@ -567,11 +714,12 @@ Parser.prototype.statements = function () {
   }
 };
 
-Parser.prototype.binaryFn = function (left, op, right) {
+Parser.prototype.binaryFn = function (left, op, right, isShortCircuiting) {
   var fn = function (self, locals) {
     return op(self, locals, left, right);
   };
   fn.constant = left.constant && right.constant;
+  fn.inputs = !isShortCircuiting && [left, right];
   return fn;
 };
 
@@ -665,6 +813,7 @@ Parser.prototype.arrayDeclaration = function () {
   };
   arrayFn.literal = true;
   arrayFn.constant = _.every(elementFns, 'constant');
+  arrayFn.inputs = elementFns;
   return arrayFn;
 };
 
@@ -691,5 +840,6 @@ Parser.prototype.object = function () {
   };
   objectFn.literal = true;
   objectFn.constant = _(keyValues).pluck('value').every('constant');
+  objectFn.inputs = _.pluck(keyValues, 'value');
   return objectFn;
 };
