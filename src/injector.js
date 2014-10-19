@@ -1,5 +1,5 @@
 /* jshint globalstrict: true */
-/* global angular: false */
+/* global angular: false, HashMap: false */
 'use strict';
 
 function createInjector (modulesToLoad) {
@@ -8,18 +8,20 @@ function createInjector (modulesToLoad) {
   var STRIP_COMMENTS = /(\/\/.*$)|(\/\*.*?\*\/)/mg;
   var INSTANTIATING = {};
   var providerCache = {};
-  var providerInjector = createInternalInjector(providerCache, function () {
+  var providerInjector = providerCache.$injector =
+      createInternalInjector(providerCache, function () {
     throw 'Unknown provider: ' + path.join(' <- ');
   });
   var instanceCache = {};
-  var instanceInjector = createInternalInjector(instanceCache, function (name) {
+  var instanceInjector = instanceCache.$injector =
+      createInternalInjector(instanceCache, function (name) {
     var provider = providerInjector.get(name + 'Provider');
     return instanceInjector.invoke(provider.$get, provider);
   });
-  var loadedModules = {};
+  var loadedModules = new HashMap();
   var path = [];
 
-  var $provide = {
+  providerCache.$provide = {
     constant: function (key, value) {
       if (key === 'hasOwnProperty') {
         throw 'hasOwnProperty is not a valid constant name!';
@@ -32,6 +34,26 @@ function createInjector (modulesToLoad) {
         provider = providerInjector.instantiate(provider);
       }
       providerCache[key + 'Provider'] = provider;
+    },
+    factory: function (key, factoryFn) {
+      this.provider(key, {$get: factoryFn});
+    },
+    value: function (key, value) {
+      this.factory(key, _.constant(value));
+    },
+    service: function (key, Constructor) {
+      this.factory(key, function () {
+        return instanceInjector.instantiate(Constructor);
+      });
+    },
+    decorator: function (serviceName, decoratorFn) {
+      var provider = providerInjector.get(serviceName + 'Provider');
+      var original$get = provider.$get;
+      provider.$get = function () {
+        var instance = instanceInjector.invoke(original$get, provider);
+        instanceInjector.invoke(decoratorFn, null, {$delegate: instance});
+        return instance;
+      };
     }
   };
 
@@ -108,17 +130,27 @@ function createInjector (modulesToLoad) {
     }
   }
 
-  _.forEach(modulesToLoad, function loadModule (moduleName) {
-    if (!loadedModules.hasOwnProperty(moduleName)) {
-      loadedModules[moduleName] = true;
-      var module = angular.module(moduleName);
-      _.forEach(module.requires, loadModule);
-      _.forEach(module._invokeQueue, function (invokeArgs) {
-        var method = invokeArgs[0];
-        var args = invokeArgs[1];
-        $provide[method].apply($provide, args);
-      });
+  var runBlocks = [];
+  _.forEach(modulesToLoad, function loadModule (module) {
+    if (!loadedModules.get(module)) {
+      loadedModules.put(module, true);
+      if (_.isString(module)) {
+        module = angular.module(module);
+        _.forEach(module.requires, loadModule);
+        _.forEach(module._invokeQueue, function (invokeArgs) {
+          var service = providerInjector.get(invokeArgs[0]);
+          var method = invokeArgs[1];
+          var args = invokeArgs[2];
+          service[method].apply(service, args);
+        });
+        runBlocks = runBlocks.concat(module._runBlocks);
+      } else if (_.isFunction(module) || _.isArray(module)) {
+        runBlocks.push(providerInjector.invoke(module));
+      }
     }
+  });
+  _.forEach(_.compact(runBlocks), function (runBlock) {
+    instanceInjector.invoke(runBlock);
   });
 
   return instanceInjector;
