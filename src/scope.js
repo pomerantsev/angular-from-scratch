@@ -21,6 +21,8 @@ function $RootScopeProvider () {
       this.$$watchers = [];
       this.$$lastDirtyWatch = null;
       this.$$asyncQueue = [];
+      this.$$applyAsyncQueue = [];
+      this.$$applyAsyncId = null;
       this.$$postDigestQueue = [];
       this.$$root = this;
       this.$$children = [];
@@ -216,6 +218,11 @@ function $RootScopeProvider () {
           dirty;
       this.$$root.$$lastDirtyWatch = null;
       this.$beginPhase('$digest');
+
+      if (this.$$root.$$applyAsyncId) {
+        clearTimeout(this.$$applyAsyncId);
+        this.$$flushApplyAsync();
+      }
       do {
         while (this.$$asyncQueue.length) {
           try {
@@ -256,6 +263,29 @@ function $RootScopeProvider () {
       }
     };
 
+    Scope.prototype.$$flushApplyAsync = function () {
+      while (this.$$applyAsyncQueue.length) {
+        try {
+          this.$$applyAsyncQueue.shift()();
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      this.$$root.$$applyAsyncId = null;
+    };
+
+    Scope.prototype.$applyAsync = function (expr) {
+      var self = this;
+      self.$$applyAsyncQueue.push(function () {
+        self.$eval(expr);
+      });
+      if (self.$$root.$$applyAsyncId === null) {
+        self.$$root.$$applyAsyncId = setTimeout(function () {
+          self.$apply(_.bind(self.$$flushApplyAsync, self));
+        }, 0);
+      }
+    };
+
     Scope.prototype.$evalAsync = function (expr) {
       var self = this;
       if (!self.$$phase && !self.$$asyncQueue.length) {
@@ -282,6 +312,7 @@ function $RootScopeProvider () {
         child.$$root = this.$$root;
         child.$$asyncQueue = this.$$asyncQueue;
         child.$$postDigestQueue = this.$$postDigestQueue;
+        child.$$applyAsyncQueue = this.$$applyAsyncQueue;
       } else {
         var ChildScope = function () {};
         ChildScope.prototype = this;
