@@ -6,6 +6,10 @@ describe('$animate', function () {
     injector.invoke(callback);
   }
 
+  function isPromiseLike (obj) {
+    return obj && _.isFunction(obj.then);
+  }
+
   beforeEach(function () {
     delete window.angular;
     publishExternalAPI();
@@ -19,6 +23,14 @@ describe('$animate', function () {
         expect(parent.children().length).toBe(0);
         $animate.enter(child, parent);
         expect(parent.children().length).toBe(1);
+      });
+    });
+
+    it('returns a promise', function () {
+      inject(function ($animate) {
+        var parent = $('<div>');
+        var child = $('<div>');
+        expect(isPromiseLike($animate.enter(child, parent))).toBe(true);
       });
     });
   });
