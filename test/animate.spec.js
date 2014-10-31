@@ -1,4 +1,11 @@
 describe('$animate', function () {
+  function inject (callback) {
+    var myModule = window.angular.module('myModule', []);
+    var injector = createInjector(['ng']);
+
+    injector.invoke(callback);
+  }
+
   beforeEach(function () {
     delete window.angular;
     publishExternalAPI();
@@ -6,13 +13,9 @@ describe('$animate', function () {
 
   describe('enter', function () {
     it('inserts an element into the parent element', function () {
-      var myModule = window.angular.module('myModule', []);
-      var injector = createInjector(['ng']);
-
-      var parent = $('<div>');
-      var child = $('<div>');
-
-      injector.invoke(function ($animate) {
+      inject(function ($animate) {
+        var parent = $('<div>');
+        var child = $('<div>');
         expect(parent.children().length).toBe(0);
         $animate.enter(child, parent);
         expect(parent.children().length).toBe(1);
