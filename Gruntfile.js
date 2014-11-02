@@ -26,7 +26,7 @@ module.exports = function (grunt) {
       unit: {
         options: {
           framework: 'jasmine2',
-          launch_in_dev: ['PhantomJS'],
+          launch_in_dev: ['Chrome'],
           before_tests: 'grunt jshint',
           serve_files: [
             'node_modules/lodash/lodash.js',

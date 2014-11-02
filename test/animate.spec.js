@@ -1,13 +1,43 @@
 describe('$animate', function () {
   function inject (callback) {
-    var myModule = window.angular.module('myModule', []);
-    var injector = createInjector(['ng']);
+    var injector = createInjector(['ng', function ($provide) {
+      var reflowQueue = [];
+      $provide.value('$$animateReflow', function (fn) {
+        var index = reflowQueue.length;
+        reflowQueue.push(fn);
+        return function cancel() {
+          reflowQueue.splice(index, 1);
+        };
+      });
+
+      $provide.decorator('$animate', function ($delegate) {
+        $delegate.triggerReflow = function () {
+          _.forEach(reflowQueue, function (fn) {
+            fn();
+          });
+          reflowQueue = [];
+        };
+
+        return $delegate;
+      });
+    }]);
 
     injector.invoke(callback);
   }
 
   function isPromiseLike (obj) {
     return obj && _.isFunction(obj.then);
+  }
+
+  function browserTrigger (element, eventType) {
+    if (element && !element.nodeName) element = element[0];
+
+    var evnt;
+    if (eventType === 'transitionend') {
+      evnt = new TransitionEvent(eventType);
+    }
+
+    element.dispatchEvent(evnt);
   }
 
   beforeEach(function () {
@@ -38,6 +68,18 @@ describe('$animate', function () {
   it('provides a cancel method', function () {
     inject(function ($animate) {
       expect($animate.cancel).not.toBeUndefined();
+    });
+  });
+
+  describe('browserTrigger', function () {
+    it('dispatches a transitionend event (but not in PhantomJS)', function () {
+      var hasBeenCalled = false;
+      var element = $('<div>');
+      element.on('transitionend', function () {
+        hasBeenCalled = true;
+      });
+      browserTrigger(element, 'transitionend');
+      expect(hasBeenCalled).toBe(true);
     });
   });
 });
