@@ -40,27 +40,53 @@ describe('$animate', function () {
     element.dispatchEvent(evnt);
   }
 
+  function createMockStyleSheet () {
+    var node = document.createElement('style');
+    var head = document.getElementsByTagName('head')[0];
+    head.appendChild(node);
+
+    var ss = document.styleSheets[document.styleSheets.length - 1];
+
+    return {
+      addRule : function(selector, styles) {
+        ss.insertRule(selector + '{ ' + styles + '}', 0);
+      },
+      destroy : function() {
+        head.removeChild(node);
+      }
+    };
+  }
+
+  var ss;
+
   beforeEach(function () {
     delete window.angular;
     publishExternalAPI();
+    ss = createMockStyleSheet();
   });
 
   describe('enter', function () {
-    it('inserts an element into the parent element', function () {
-      inject(function ($animate) {
-        var parent = $('<div>');
-        var child = $('<div>');
-        expect(parent.children().length).toBe(0);
-        $animate.enter(child, parent);
-        expect(parent.children().length).toBe(1);
-      });
-    });
-
     it('returns a promise', function () {
       inject(function ($animate) {
         var parent = $('<div>');
         var child = $('<div>');
         expect(isPromiseLike($animate.enter(child, parent))).toBe(true);
+      });
+    });
+
+    it('animates enter', function () {
+      inject(function ($animate) {
+        var parent = $('<div>');
+        var child = $('<div>');
+        $(document.body).append(parent);
+        expect(parent.children().length).toBe(0);
+        $animate.enter(child, parent);
+        expect(parent.children().length).toBe(0);
+        $animate.triggerReflow();
+        expect(child.hasClass('ng-enter')).toBe(true);
+        expect(child.hasClass('ng-enter-active')).toBe(true);
+        browserTrigger(parent, 'transitionend');
+        expect(parent.children().length).toBe(1);
       });
     });
   });
