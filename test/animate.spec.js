@@ -34,4 +34,10 @@ describe('$animate', function () {
       });
     });
   });
+
+  it('provides a cancel method', function () {
+    inject(function ($animate) {
+      expect($animate.cancel).not.toBeUndefined();
+    });
+  });
 });

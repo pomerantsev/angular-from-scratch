@@ -20,7 +20,9 @@ function $AnimateProvider () {
           parent.prepend(element);
         }
         return asyncPromise();
-      }
+      },
+
+      cancel: _.noop
     };
   };
 }
