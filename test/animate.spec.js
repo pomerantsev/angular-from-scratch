@@ -75,18 +75,24 @@ describe('$animate', function () {
     });
 
     it('animates enter', function () {
-      inject(function ($animate) {
+      inject(function ($animate, $rootScope) {
         var parent = $('<div>');
         var child = $('<div>');
         $(document.body).append(parent);
         expect(parent.children().length).toBe(0);
+
         $animate.enter(child, parent);
-        expect(parent.children().length).toBe(0);
+        expect(parent.children().length).toBe(1);
+        expect(child.hasClass('ng-enter')).toBe(false);
+        expect(child.hasClass('ng-enter-active')).toBe(false);
+
+        $rootScope.$digest();
+        expect(child.hasClass('ng-enter')).toBe(true);
+        expect(child.hasClass('ng-enter-active')).toBe(false);
+
         $animate.triggerReflow();
         expect(child.hasClass('ng-enter')).toBe(true);
         expect(child.hasClass('ng-enter-active')).toBe(true);
-        browserTrigger(parent, 'transitionend');
-        expect(parent.children().length).toBe(1);
       });
     });
   });

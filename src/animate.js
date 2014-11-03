@@ -2,7 +2,7 @@
 'use strict';
 
 function $AnimateProvider () {
-  this.$get = function ($$animateReflow) {
+  this.$get = function ($rootScope, $$animateReflow) {
 
     function asyncPromise () {
       var defer = Q.defer();
@@ -14,14 +14,19 @@ function $AnimateProvider () {
 
     return {
       enter: function (element, parent, after) {
-        $$animateReflow(function () {
-          element.addClass('ng-enter').addClass('ng-enter-active');
-          if (after) {
-            after.after(element);
-          } else {
-            parent.prepend(element);
-          }
+        if (after) {
+          after.after(element);
+        } else {
+          parent.prepend(element);
+        }
+
+        $rootScope.$$postDigest(function () {
+          element.addClass('ng-enter');
+          $$animateReflow(function () {
+            element.addClass('ng-enter-active');
+          });
         });
+
         return asyncPromise();
       },
 
