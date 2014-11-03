@@ -95,12 +95,15 @@ describe('$animate', function () {
         $animate.triggerReflow();
         expect(child.hasClass('ng-enter')).toBe(true);
         expect(child.hasClass('ng-enter-active')).toBe(true);
+
+        browserTrigger(child,'transitionend', { elapsedTime: 1 });
+        expect(child.hasClass('ng-enter')).toBe(false);
+        expect(child.hasClass('ng-enter-active')).toBe(false);
       });
     });
 
     it('animates leave', function () {
       inject(function ($animate, $rootScope) {
-        ss.addRule('.ng-leave', 'transition: 1s linear all;');
         var parent = $('<div>');
         var child = $('<div>');
 

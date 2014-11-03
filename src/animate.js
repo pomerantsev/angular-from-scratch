@@ -24,6 +24,9 @@ function $AnimateProvider () {
           element.addClass('ng-enter');
           $$animateReflow(function () {
             element.addClass('ng-enter-active');
+            element.on('transitionend', function () {
+              element.removeClass('ng-enter ng-enter-active');
+            });
           });
         });
 
