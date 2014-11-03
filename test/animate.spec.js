@@ -29,12 +29,14 @@ describe('$animate', function () {
     return obj && _.isFunction(obj.then);
   }
 
-  function browserTrigger (element, eventType) {
+  function browserTrigger (element, eventType, eventData) {
     if (element && !element.nodeName) element = element[0];
+
+    eventData = eventData || {};
 
     var evnt;
     if (eventType === 'transitionend') {
-      evnt = new TransitionEvent(eventType);
+      evnt = new TransitionEvent(eventType, eventData);
     }
 
     element.dispatchEvent(evnt);
@@ -93,6 +95,36 @@ describe('$animate', function () {
         $animate.triggerReflow();
         expect(child.hasClass('ng-enter')).toBe(true);
         expect(child.hasClass('ng-enter-active')).toBe(true);
+      });
+    });
+
+    it('animates leave', function () {
+      inject(function ($animate, $rootScope) {
+        ss.addRule('.ng-leave', 'transition: 1s linear all;');
+        var parent = $('<div>');
+        var child = $('<div>');
+
+        $(document.body).append(parent);
+        parent.append(child);
+        expect(parent.children().length).toBe(1);
+
+        $animate.leave(child);
+        expect(parent.children().length).toBe(1);
+        expect(child.hasClass('ng-leave')).toBe(false);
+        expect(child.hasClass('ng-leave-active')).toBe(false);
+
+        $rootScope.$digest();
+        expect(parent.children().length).toBe(1);
+        expect(child.hasClass('ng-leave')).toBe(true);
+        expect(child.hasClass('ng-leave-active')).toBe(false);
+
+        $animate.triggerReflow();
+        expect(parent.children().length).toBe(1);
+        expect(child.hasClass('ng-leave')).toBe(true);
+        expect(child.hasClass('ng-leave-active')).toBe(true);
+
+        browserTrigger(child,'transitionend', { elapsedTime: 1 });
+        expect(parent.contents().length).toBe(0);
       });
     });
   });

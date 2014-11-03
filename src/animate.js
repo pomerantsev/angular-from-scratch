@@ -30,6 +30,19 @@ function $AnimateProvider () {
         return asyncPromise();
       },
 
+      leave: function (element) {
+        $rootScope.$$postDigest(function () {
+          element.addClass('ng-leave');
+          $$animateReflow(function () {
+            element.addClass('ng-leave-active');
+            element.on('transitionend', function () {
+              element.remove();
+            });
+          });
+        });
+        return asyncPromise();
+      },
+
       cancel: _.noop
     };
   };
