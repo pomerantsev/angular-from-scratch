@@ -671,9 +671,9 @@ Parser.prototype.logicalOR = function () {
 Parser.prototype.ternary = function () {
   var left = this.logicalOR();
   if (this.expect('?')) {
-    var middle = this.ternary();
+    var middle = this.assignment();
     this.consume(':');
-    var right = this.ternary();
+    var right = this.assignment();
     var ternaryFn = function (self, locals) {
       return left(self, locals) ? middle(self, locals) : right(self, locals);
     };

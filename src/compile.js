@@ -48,7 +48,7 @@ function $CompileProvider ($provide) {
           var factories = hasDirectives[name];
           return _.map(factories, function (factory) {
             var directive = $injector.invoke(factory);
-            directive.restrict = directive.restrict || 'A';
+            directive.restrict = directive.restrict || 'EA';
             return directive;
           });
         }]);
@@ -102,13 +102,18 @@ function $CompileProvider ($provide) {
 
     Attributes.prototype.$observe = function (key, fn) {
       var self = this;
-      this.$$observers = this.$$observers || {};
+      this.$$observers = this.$$observers || Object.create(null);
       this.$$observers[key] = this.$$observers[key] || [];
       this.$$observers[key].push(fn);
       $rootScope.$evalAsync(function () {
         fn(self[key]);
       });
-      return fn;
+      return function () {
+        var index = self.$$observers[key].indexOf(fn);
+        if (index >= 0) {
+          self.$$observers[key].splice(index, 1);
+        }
+      };
     };
 
     Attributes.prototype.$addClass = function (classVal) {
@@ -157,7 +162,8 @@ function $CompileProvider ($provide) {
           var attrStartName, attrEndName;
           var name = attr.name;
           var normalizedAttr = directiveNormalize(name.toLowerCase());
-          if (/^ngAttr[A-Z]/.test(normalizedAttr)) {
+          var isNgAttr = /^ngAttr[A-Z]/.test(normalizedAttr);
+          if (isNgAttr) {
             name = _.snakeCase(
               normalizedAttr[6].toLowerCase() + normalizedAttr.substring(7),
               '-'
@@ -167,16 +173,22 @@ function $CompileProvider ($provide) {
 
           attrs.$attr[normalizedAttr] = name;
 
-          if (/Start$/.test(normalizedAttr)) {
-            attrStartName = name;
-            attrEndName = name.substring(0, name.length - 5) + 'end';
-            name = name.substring(0, name.length - 6);
+          var directiveNName = normalizedAttr.replace(/(Start|End)$/, '');
+
+          if (directiveIsMultiElement(directiveNName)) {
+            if (/Start$/.test(normalizedAttr)) {
+              attrStartName = name;
+              attrEndName = name.substring(0, name.length - 5) + 'end';
+              name = name.substring(0, name.length - 6);
+            }
           }
           normalizedAttr = directiveNormalize(name.toLowerCase());
           addDirective(directives, normalizedAttr, 'A', attrStartName, attrEndName);
-          attrs[normalizedAttr] = attr.value.trim();
-          if (isBooleanAttribute(node, normalizedAttr)) {
-            attrs[normalizedAttr] = true;
+          if (isNgAttr || !attrs.hasOwnProperty(normalizedAttr)) {
+            attrs[normalizedAttr] = attr.value.trim();
+            if (isBooleanAttribute(node, normalizedAttr)) {
+              attrs[normalizedAttr] = true;
+            }
           }
         });
         var className = node.className;
@@ -253,6 +265,14 @@ function $CompileProvider ($provide) {
         nodes.push(node);
       }
       return $(nodes);
+    }
+
+    function directiveIsMultiElement (name) {
+      if (hasDirectives.hasOwnProperty(name)) {
+        var directives = $injector.get(name + 'Directive');
+        return _.any(directives, {multiElement: true});
+      }
+      return false;
     }
 
     return compile;

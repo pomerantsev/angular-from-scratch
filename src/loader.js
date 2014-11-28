@@ -13,10 +13,11 @@ function setupModuleLoader (window) {
       throw 'hasOwnProperty is not a valid module name';
     }
 
-    var invokeLater = function (service, method, arrayMethod) {
+    var invokeLater = function (service, method, arrayMethod, queue) {
       return function () {
+        queue = queue || '_invokeQueue';
         var item = [service, method, arguments];
-        moduleInstance._invokeQueue[arrayMethod || 'push'](item);
+        moduleInstance[queue][arrayMethod || 'push'](item);
         return moduleInstance;
       };
     };
@@ -30,12 +31,13 @@ function setupModuleLoader (window) {
       value: invokeLater('$provide', 'value'),
       service: invokeLater('$provide', 'service'),
       directive: invokeLater('$compileProvider', 'directive'),
-      config: invokeLater('$injector', 'invoke'),
+      config: invokeLater('$injector', 'invoke', 'push', '_configBlocks'),
       run: function (fn) {
         moduleInstance._runBlocks.push(fn);
         return moduleInstance;
       },
       _invokeQueue: [],
+      _configBlocks: [],
       _runBlocks: []
     };
 

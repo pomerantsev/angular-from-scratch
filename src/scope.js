@@ -24,7 +24,7 @@ function $RootScopeProvider () {
       this.$$applyAsyncQueue = [];
       this.$$applyAsyncId = null;
       this.$$postDigestQueue = [];
-      this.$$root = this;
+      this.$root = this;
       this.$$children = [];
       this.$$listeners = {};
       this.$$phase = null;
@@ -68,12 +68,12 @@ function $RootScopeProvider () {
       };
 
       this.$$watchers.unshift(watcher);
-      this.$$root.$$lastDirtyWatch = null;
+      this.$root.$$lastDirtyWatch = null;
       return function () {
         var index = self.$$watchers.indexOf(watcher);
         if (index >= 0) {
           self.$$watchers.splice(index, 1);
-          self.$$root.$$lastDirtyWatch = null;
+          self.$root.$$lastDirtyWatch = null;
         }
       };
     };
@@ -191,7 +191,7 @@ function $RootScopeProvider () {
               newValue = watcher.watchFn(scope);
               oldValue = watcher.last;
               if (!scope.$$areEqual(newValue, oldValue, watcher.valueEq)) {
-                self.$$root.$$lastDirtyWatch = watcher;
+                self.$root.$$lastDirtyWatch = watcher;
                 watcher.last = (watcher.valueEq ? _.cloneDeep(newValue) : newValue);
                 watcher.listenerFn(
                   newValue,
@@ -199,7 +199,7 @@ function $RootScopeProvider () {
                   scope
                 );
                 dirty = true;
-              } else if (self.$$root.$$lastDirtyWatch === watcher) {
+              } else if (self.$root.$$lastDirtyWatch === watcher) {
                 continueLoop = false;
                 return false;
               }
@@ -216,10 +216,10 @@ function $RootScopeProvider () {
     Scope.prototype.$digest = function () {
       var ttl = TTL,
           dirty;
-      this.$$root.$$lastDirtyWatch = null;
+      this.$root.$$lastDirtyWatch = null;
       this.$beginPhase('$digest');
 
-      if (this.$$root.$$applyAsyncId) {
+      if (this.$root.$$applyAsyncId) {
         clearTimeout(this.$$applyAsyncId);
         this.$$flushApplyAsync();
       }
@@ -259,7 +259,7 @@ function $RootScopeProvider () {
         return this.$eval(expr);
       } finally {
         this.$clearPhase();
-        this.$$root.$digest();
+        this.$root.$digest();
       }
     };
 
@@ -271,7 +271,7 @@ function $RootScopeProvider () {
           console.error(e);
         }
       }
-      this.$$root.$$applyAsyncId = null;
+      this.$root.$$applyAsyncId = null;
     };
 
     Scope.prototype.$applyAsync = function (expr) {
@@ -279,8 +279,8 @@ function $RootScopeProvider () {
       self.$$applyAsyncQueue.push(function () {
         self.$eval(expr);
       });
-      if (self.$$root.$$applyAsyncId === null) {
-        self.$$root.$$applyAsyncId = setTimeout(function () {
+      if (self.$root.$$applyAsyncId === null) {
+        self.$root.$$applyAsyncId = setTimeout(function () {
           self.$apply(_.bind(self.$$flushApplyAsync, self));
         }, 0);
       }
@@ -291,7 +291,7 @@ function $RootScopeProvider () {
       if (!self.$$phase && !self.$$asyncQueue.length) {
         setTimeout(function () {
           if (self.$$asyncQueue.length) {
-            self.$$root.$digest();
+            self.$root.$digest();
           }
         }, 0);
       }
@@ -305,14 +305,15 @@ function $RootScopeProvider () {
       this.$$postDigestQueue.push(fn);
     };
 
-    Scope.prototype.$new = function (isolated) {
+    Scope.prototype.$new = function (isolated, parent) {
       var child;
+      parent = parent || this;
       if (isolated) {
         child = new Scope();
-        child.$$root = this.$$root;
-        child.$$asyncQueue = this.$$asyncQueue;
-        child.$$postDigestQueue = this.$$postDigestQueue;
-        child.$$applyAsyncQueue = this.$$applyAsyncQueue;
+        child.$root = parent.$root;
+        child.$$asyncQueue = parent.$$asyncQueue;
+        child.$$postDigestQueue = parent.$$postDigestQueue;
+        child.$$applyAsyncQueue = parent.$$applyAsyncQueue;
       } else {
         var ChildScope = function () {};
         ChildScope.prototype = this;
@@ -320,16 +321,16 @@ function $RootScopeProvider () {
         // Shorthand:
         // var child = Object.create(this);
       }
-      this.$$children.push(child);
+      parent.$$children.push(child);
       child.$$watchers = [];
       child.$$listeners = {};
       child.$$children = [];
-      child.$parent = this;
+      child.$parent = parent;
       return child;
     };
 
     Scope.prototype.$destroy = function () {
-      if (this === this.$$root) {
+      if (this === this.$root) {
         return;
       }
       var siblings = this.$parent.$$children;

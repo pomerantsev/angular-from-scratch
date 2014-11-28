@@ -1145,6 +1145,26 @@ describe('Scope', function () {
       expect(child.didPostDigest).toBe(true);
     });
 
+    it('can take some other scope as the parent', function () {
+      var prototypeParent = parent.$new();
+      var hierarchyParent = parent.$new();
+      var child = prototypeParent.$new(false, hierarchyParent);
+
+      prototypeParent.a = 42;
+      expect(child.a).toBe(42);
+
+      child.counter = 0;
+      child.$watch(function (scope) {
+        scope.counter++;
+      });
+
+      prototypeParent.$digest();
+      expect(child.counter).toBe(0);
+
+      hierarchyParent.$digest();
+      expect(child.counter).toBe(2);
+    });
+
     it('is no longer digested when $destroy has been called', function () {
       var child = parent.$new();
 

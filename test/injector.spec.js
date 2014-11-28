@@ -202,6 +202,16 @@ describe('injector', function () {
       expect(injector.annotate(fn)).toEqual(['a', 'b', 'c_', '_d', 'an_argument']);
     });
 
+    it('throws when using a non-annotated fn in strict mode', function () {
+      var injector = createInjector([], true);
+
+      var fn = function (a, b, c) {};
+
+      expect(function () {
+        injector.annotate(fn);
+      }).toThrow();
+    });
+
     it('invokes an array-annotated function with dependency injection', function () {
       var module = angular.module('myModule', []);
       module.constant('a', 1);
@@ -560,6 +570,19 @@ describe('injector', function () {
     expect(injector.get('a')).toBe(42);
   });
 
+  it('allows registering config blocks before providers', function () {
+    var module = angular.module('myModule', []);
+
+    module.config(function (aProvider) {});
+    module.provider('a', function () {
+      this.$get = _.constant(42);
+    });
+
+    var injector = createInjector(['myModule']);
+
+    expect(injector.get('a')).toBe(42);
+  });
+
   it('runs a config block added during module registration', function () {
     var module = angular.module('myModule', [], function ($provide) {
       $provide.constant('a', 42);
@@ -695,6 +718,20 @@ describe('injector', function () {
     expect(injector.get('a')).toBe(injector.get('a'));
   });
 
+  it('forces a factory to return a value', function () {
+    var module = angular.module('myModule', []);
+
+    module.factory('a', function () {});
+    module.factory('b', function () { return null; });
+
+    var injector = createInjector(['myModule']);
+
+    expect(function () {
+      injector.get('a');
+    }).toThrow();
+    expect(injector.get('b')).toBeNull();
+  });
+
   it('allows registering a value', function () {
     var module = angular.module('myModule', []);
 
@@ -714,6 +751,16 @@ describe('injector', function () {
     expect(function () {
       createInjector(['myModule']);
     }).toThrow();
+  });
+
+  it('allows an undefined value', function () {
+    var module = angular.module('myModule', []);
+
+    module.value('a', undefined);
+
+    var injector = createInjector(['myModule']);
+
+    expect(injector.get('a')).toBeUndefined();
   });
 
   it('allows registering a service', function () {

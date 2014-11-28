@@ -390,7 +390,7 @@ describe('$compile', function () {
     });
   });
 
-  it('does not apply to elements when no restrict given', function () {
+  it('applies to elements when no restrict given', function () {
     var hasCompiled = false;
     var injector = makeInjectorWithDirectives('myDirective', function () {
       return {
@@ -402,6 +402,22 @@ describe('$compile', function () {
     injector.invoke(function ($compile) {
       var el = $('<my-directive></my-directive>');
       $compile(el);
+      expect(hasCompiled).toBe(true);
+    });
+  });
+
+  it('does not apply to classes when no restrict given', function () {
+    var hasCompiled  = false;
+    var injector = makeInjectorWithDirectives('myDirective', function () {
+      return {
+        compile: function (element) {
+          hasCompiled = true;
+        }
+      };
+    });
+    injector.invoke(function ($compile) {
+      var el = $('<div class="my-directive"></div>');
+      $compile(el);
       expect(hasCompiled).toBe(false);
     });
   });
@@ -410,6 +426,7 @@ describe('$compile', function () {
     var compileEl = false;
     var injector = makeInjectorWithDirectives('myDir', function () {
       return {
+        multiElement: true,
         compile: function(element) {
           compileEl = element;
         }
@@ -477,6 +494,16 @@ describe('$compile', function () {
         '<input my-directive whatever>',
         function (element, attrs) {
           expect(attrs.whatever).toEqual('');
+        }
+      );
+    });
+
+    it('overrides attributes with ng-attr- versions', function () {
+      registerAndCompile(
+        'myDirective',
+        '<input my-directive ng-attr-whatever="42" whatever="41">',
+        function (element, attrs) {
+          expect(attrs.whatever).toEqual('42');
         }
       );
     });
@@ -649,6 +676,26 @@ describe('$compile', function () {
           $rootScope.$digest();
 
           expect(gotValue).toEqual('42');
+        }
+      );
+    });
+
+    it('lets observers be deregistered', function () {
+      registerAndCompile(
+        'myDirective',
+        '<my-directive some-attribute="42"></my-directive>',
+        function (element, attrs) {
+          var gotValue;
+          var remove = attrs.$observe('someAttribute', function (value) {
+            gotValue = value;
+          });
+
+          attrs.$set('someAttribute', '43');
+          expect(gotValue).toEqual('43');
+
+          remove();
+          attrs.$set('someAttribute', '44');
+          expect(gotValue).toEqual('43');
         }
       );
     });

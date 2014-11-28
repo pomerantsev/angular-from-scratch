@@ -2,7 +2,7 @@
 /* global angular: false, HashMap: false */
 'use strict';
 
-function createInjector (modulesToLoad) {
+function createInjector (modulesToLoad, strictDi) {
   var FN_ARG = /^\s*(_?)(\S+)\1\s*$/;
   var FN_ARGS = /^function\s*[^\(]*\(\s*([^\)]*)\)/m;
   var STRIP_COMMENTS = /(\/\/.*$)|(\/\*.*?\*\/)/mg;
@@ -19,7 +19,18 @@ function createInjector (modulesToLoad) {
     return instanceInjector.invoke(provider.$get, provider);
   });
   var loadedModules = new HashMap();
+  strictDi = (strictDi === true);
   var path = [];
+
+  function enforceReturnValue (factoryFn) {
+    return function () {
+      var value = instanceInjector.invoke(factoryFn);
+      if (_.isUndefined(value)) {
+        throw 'factory must return a value';
+      }
+      return value;
+    };
+  }
 
   providerCache.$provide = {
     constant: function (key, value) {
@@ -35,11 +46,13 @@ function createInjector (modulesToLoad) {
       }
       providerCache[key + 'Provider'] = provider;
     },
-    factory: function (key, factoryFn) {
-      this.provider(key, {$get: factoryFn});
+    factory: function (key, factoryFn, enforce) {
+      this.provider(key, {
+        $get: enforce === false ? factoryFn : enforceReturnValue(factoryFn)
+      });
     },
     value: function (key, value) {
-      this.factory(key, _.constant(value));
+      this.factory(key, _.constant(value), false);
     },
     service: function (key, Constructor) {
       this.factory(key, function () {
@@ -122,12 +135,25 @@ function createInjector (modulesToLoad) {
     } else if (!fn.length) {
       return [];
     } else {
+      if (strictDi) {
+        throw 'fn is not using explicit annotation and ' +
+              'cannot be invoked in strict mode';
+      }
       var source = fn.toString().replace(STRIP_COMMENTS, '');
       var argDeclaration = source.match(FN_ARGS);
       return _.map(argDeclaration[1].split(','), function (argName) {
         return argName.match(FN_ARG)[2];
       });
     }
+  }
+
+  function runInvokeQueue(queue) {
+    _.forEach(queue, function (invokeArgs) {
+      var service = providerInjector.get(invokeArgs[0]);
+      var method = invokeArgs[1];
+      var args = invokeArgs[2];
+      service[method].apply(service, args);
+    });
   }
 
   var runBlocks = [];
@@ -137,12 +163,8 @@ function createInjector (modulesToLoad) {
       if (_.isString(module)) {
         module = angular.module(module);
         _.forEach(module.requires, loadModule);
-        _.forEach(module._invokeQueue, function (invokeArgs) {
-          var service = providerInjector.get(invokeArgs[0]);
-          var method = invokeArgs[1];
-          var args = invokeArgs[2];
-          service[method].apply(service, args);
-        });
+        runInvokeQueue(module._invokeQueue);
+        runInvokeQueue(module._configBlocks);
         runBlocks = runBlocks.concat(module._runBlocks);
       } else if (_.isFunction(module) || _.isArray(module)) {
         runBlocks.push(providerInjector.invoke(module));
