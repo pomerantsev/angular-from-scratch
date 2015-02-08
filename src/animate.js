@@ -4,14 +4,6 @@
 function $AnimateProvider () {
   this.$get = function ($rootScope, $$animateReflow) {
 
-    function asyncPromise () {
-      var defer = Q.defer();
-      setTimeout(function () {
-        defer.resolve();
-      }, 16.66);
-      return defer.promise;
-    }
-
     var delegate = {
       enter: function (element, parentElement, afterElement) {
         if (afterElement) {
