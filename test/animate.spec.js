@@ -128,6 +128,19 @@ describe('$animate', function () {
       browserTrigger(child,'transitionend', { elapsedTime: 1 });
       expect(parent.contents().length).toBe(0);
     }));
+
+    it('animates move', inject(function ($animate, $rootScope) {
+      var parent = $('<div>'),
+          child1 = $('<div>1</div>'),
+          child2 = $('<div>2</div>');
+      parent.append(child1);
+      parent.append(child2);
+      expect(parent.text()).toBe('12');
+      $animate.move(child1, parent, child2);
+      $rootScope.$digest();
+      $animate.triggerReflow();
+      expect(parent.text()).toBe('21');
+    }));
   });
 
   it('provides a cancel method', inject(function ($animate) {

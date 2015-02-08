@@ -12,13 +12,27 @@ function $AnimateProvider () {
       return defer.promise;
     }
 
-    return {
-      enter: function (element, parent, after) {
-        if (after) {
-          after.after(element);
+    var delegate = {
+      enter: function (element, parentElement, afterElement) {
+        if (afterElement) {
+          afterElement.after(element);
         } else {
-          parent.prepend(element);
+          parentElement.prepend(element);
         }
+      },
+
+      leave: function (element) {
+        element.remove();
+      },
+
+      move: function (element, parentElement, afterElement) {
+        return this.enter(element, parentElement, afterElement);
+      }
+    };
+
+    return {
+      enter: function (element, parentElement, afterElement) {
+        delegate.enter(element, parentElement, afterElement);
 
         $rootScope.$$postDigest(function () {
           element.addClass('ng-enter');
@@ -39,11 +53,25 @@ function $AnimateProvider () {
           $$animateReflow(function () {
             element.addClass('ng-leave-active');
             element.on('transitionend', function () {
-              element.remove();
+              delegate.leave(element);
             });
           });
         });
         return asyncPromise();
+      },
+
+      move: function (element, parentElement, afterElement) {
+        delegate.move(element, parentElement, afterElement);
+
+        $rootScope.$$postDigest(function () {
+          element.addClass('ng-move');
+          $$animateReflow(function () {
+            element.addClass('ng-move-active');
+            element.on('transitionend', function () {
+              element.removeClass('ng-move ng-move-active');
+            });
+          });
+        });
       },
 
       cancel: _.noop
