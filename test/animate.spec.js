@@ -22,7 +22,9 @@ describe('$animate', function () {
       });
     }]);
 
-    injector.invoke(callback);
+    return function () {
+      injector.invoke(callback);
+    };
   }
 
   function isPromiseLike (obj) {
@@ -67,76 +69,70 @@ describe('$animate', function () {
     ss = createMockStyleSheet();
   });
 
+  publishExternalAPI();
+
   describe('enter', function () {
-    it('returns a promise', function () {
-      inject(function ($animate) {
-        var parent = $('<div>');
-        var child = $('<div>');
-        expect(isPromiseLike($animate.enter(child, parent))).toBe(true);
-      });
-    });
+    it('returns a promise', inject(function ($animate) {
+      var parent = $('<div>');
+      var child = $('<div>');
+      expect(isPromiseLike($animate.enter(child, parent))).toBe(true);
+    }));
 
-    it('animates enter', function () {
-      inject(function ($animate, $rootScope) {
-        var parent = $('<div>');
-        var child = $('<div>');
-        $(document.body).append(parent);
-        expect(parent.children().length).toBe(0);
+    it('animates enter', inject(function ($animate, $rootScope) {
+      var parent = $('<div>');
+      var child = $('<div>');
+      $(document.body).append(parent);
+      expect(parent.children().length).toBe(0);
 
-        $animate.enter(child, parent);
-        expect(parent.children().length).toBe(1);
-        expect(child.hasClass('ng-enter')).toBe(false);
-        expect(child.hasClass('ng-enter-active')).toBe(false);
+      $animate.enter(child, parent);
+      expect(parent.children().length).toBe(1);
+      expect(child.hasClass('ng-enter')).toBe(false);
+      expect(child.hasClass('ng-enter-active')).toBe(false);
 
-        $rootScope.$digest();
-        expect(child.hasClass('ng-enter')).toBe(true);
-        expect(child.hasClass('ng-enter-active')).toBe(false);
+      $rootScope.$digest();
+      expect(child.hasClass('ng-enter')).toBe(true);
+      expect(child.hasClass('ng-enter-active')).toBe(false);
 
-        $animate.triggerReflow();
-        expect(child.hasClass('ng-enter')).toBe(true);
-        expect(child.hasClass('ng-enter-active')).toBe(true);
+      $animate.triggerReflow();
+      expect(child.hasClass('ng-enter')).toBe(true);
+      expect(child.hasClass('ng-enter-active')).toBe(true);
 
-        browserTrigger(child,'transitionend', { elapsedTime: 1 });
-        expect(child.hasClass('ng-enter')).toBe(false);
-        expect(child.hasClass('ng-enter-active')).toBe(false);
-      });
-    });
+      browserTrigger(child,'transitionend', { elapsedTime: 1 });
+      expect(child.hasClass('ng-enter')).toBe(false);
+      expect(child.hasClass('ng-enter-active')).toBe(false);
+    }));
 
-    it('animates leave', function () {
-      inject(function ($animate, $rootScope) {
-        var parent = $('<div>');
-        var child = $('<div>');
+    it('animates leave', inject(function ($animate, $rootScope) {
+      var parent = $('<div>');
+      var child = $('<div>');
 
-        $(document.body).append(parent);
-        parent.append(child);
-        expect(parent.children().length).toBe(1);
+      $(document.body).append(parent);
+      parent.append(child);
+      expect(parent.children().length).toBe(1);
 
-        $animate.leave(child);
-        expect(parent.children().length).toBe(1);
-        expect(child.hasClass('ng-leave')).toBe(false);
-        expect(child.hasClass('ng-leave-active')).toBe(false);
+      $animate.leave(child);
+      expect(parent.children().length).toBe(1);
+      expect(child.hasClass('ng-leave')).toBe(false);
+      expect(child.hasClass('ng-leave-active')).toBe(false);
 
-        $rootScope.$digest();
-        expect(parent.children().length).toBe(1);
-        expect(child.hasClass('ng-leave')).toBe(true);
-        expect(child.hasClass('ng-leave-active')).toBe(false);
+      $rootScope.$digest();
+      expect(parent.children().length).toBe(1);
+      expect(child.hasClass('ng-leave')).toBe(true);
+      expect(child.hasClass('ng-leave-active')).toBe(false);
 
-        $animate.triggerReflow();
-        expect(parent.children().length).toBe(1);
-        expect(child.hasClass('ng-leave')).toBe(true);
-        expect(child.hasClass('ng-leave-active')).toBe(true);
+      $animate.triggerReflow();
+      expect(parent.children().length).toBe(1);
+      expect(child.hasClass('ng-leave')).toBe(true);
+      expect(child.hasClass('ng-leave-active')).toBe(true);
 
-        browserTrigger(child,'transitionend', { elapsedTime: 1 });
-        expect(parent.contents().length).toBe(0);
-      });
-    });
+      browserTrigger(child,'transitionend', { elapsedTime: 1 });
+      expect(parent.contents().length).toBe(0);
+    }));
   });
 
-  it('provides a cancel method', function () {
-    inject(function ($animate) {
-      expect($animate.cancel).not.toBeUndefined();
-    });
-  });
+  it('provides a cancel method', inject(function ($animate) {
+    expect($animate.cancel).not.toBeUndefined();
+  }));
 
   describe('browserTrigger', function () {
     it('dispatches a transitionend event (but not in PhantomJS)', function () {
