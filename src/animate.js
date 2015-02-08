@@ -30,51 +30,59 @@ function $AnimateProvider () {
       }
     };
 
+    function runAnimationPostDigest (fn) {
+      var defer = Q.defer();
+      $rootScope.$$postDigest(function () {
+        fn(function () {
+          defer.resolve();
+        });
+      });
+      return defer.promise;
+    }
+
     return {
-      enter: function (element, parentElement, afterElement) {
+      enter: function (element, parentElement, afterElement, options) {
         delegate.enter(element, parentElement, afterElement);
 
-        $rootScope.$$postDigest(function () {
-          element.addClass('ng-enter');
-          $$animateReflow(function () {
-            element.addClass('ng-enter-active');
-            element.on('transitionend', function () {
-              element.removeClass('ng-enter ng-enter-active');
-            });
-          });
+        return runAnimationPostDigest(function (done) {
+          return performAnimation('enter', 'ng-enter', element, parentElement, afterElement, _.noop, options, done);
         });
-
-        return asyncPromise();
       },
 
-      leave: function (element) {
-        $rootScope.$$postDigest(function () {
-          element.addClass('ng-leave');
-          $$animateReflow(function () {
-            element.addClass('ng-leave-active');
-            element.on('transitionend', function () {
-              delegate.leave(element);
-            });
-          });
+      leave: function (element, options) {
+        return runAnimationPostDigest(function (done) {
+          return performAnimation('leave', 'ng-leave', element, null, null, function () {
+            delegate.leave(element);
+          }, options, done);
         });
-        return asyncPromise();
       },
 
-      move: function (element, parentElement, afterElement) {
+      move: function (element, parentElement, afterElement, options) {
         delegate.move(element, parentElement, afterElement);
 
-        $rootScope.$$postDigest(function () {
-          element.addClass('ng-move');
-          $$animateReflow(function () {
-            element.addClass('ng-move-active');
-            element.on('transitionend', function () {
-              element.removeClass('ng-move ng-move-active');
-            });
-          });
+        return runAnimationPostDigest(function (done) {
+          return performAnimation('move', 'ng-move', element, parentElement, afterElement, _.noop, options, done);
         });
       },
 
       cancel: _.noop
     };
+
+    function performAnimation (animationEvent, className, element, parentElement, afterElement, domOperation, options, doneCallback) {
+      if (!parentElement) {
+        parentElement = afterElement ? afterElement.parent() : element.parent();
+      }
+
+      element.addClass(className);
+
+      $$animateReflow(function () {
+        element.addClass(className + '-active');
+        element.on('transitionend', function () {
+          element.removeClass(className + ' ' + className + '-active');
+          domOperation();
+          doneCallback();
+        });
+      });
+    }
   };
 }
