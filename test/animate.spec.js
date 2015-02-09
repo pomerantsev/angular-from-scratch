@@ -141,6 +141,15 @@ describe('$animate', function () {
       $animate.triggerReflow();
       expect(parent.text()).toBe('21');
     }));
+
+    it('performs the animate event', inject(function ($animate, $rootScope) {
+      var element = $('<div>');
+      $animate.animate(element, { color: 'rgb(255, 0, 0)' }, { color: 'rgb(0, 0, 255)' }, 'animated');
+      $rootScope.$digest();
+      expect(element.css('color')).toBe('rgb(255, 0, 0)');
+      $animate.triggerReflow();
+      expect(element.css('color')).toBe('rgb(0, 0, 255)');
+    }));
   });
 
   it('provides a cancel method', inject(function ($animate) {

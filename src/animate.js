@@ -33,6 +33,15 @@ function $AnimateProvider () {
     }
 
     return {
+      animate: function (element, from, to, className, options) {
+        options = options || {};
+        options.from = from;
+        options.to = to;
+        return runAnimationPostDigest(function (done) {
+          return performAnimation('animate', className, element, null, null, _.noop, options, done);
+        });
+      },
+
       enter: function (element, parentElement, afterElement, options) {
         delegate.enter(element, parentElement, afterElement);
 
@@ -61,14 +70,17 @@ function $AnimateProvider () {
     };
 
     function performAnimation (animationEvent, className, element, parentElement, afterElement, domOperation, options, doneCallback) {
+      options = options || {};
       if (!parentElement) {
         parentElement = afterElement ? afterElement.parent() : element.parent();
       }
 
       element.addClass(className);
+      element.css(options.from || {});
 
       $$animateReflow(function () {
         element.addClass(className + '-active');
+        element.css(_.extend(options.from || {}, options.to || {}));
         element.on('transitionend', function () {
           element.removeClass(className + ' ' + className + '-active');
           domOperation();
@@ -77,4 +89,5 @@ function $AnimateProvider () {
       });
     }
   };
+
 }
